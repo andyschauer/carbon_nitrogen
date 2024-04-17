@@ -20,7 +20,7 @@ Version 1.0 mod date 2024-04-08 => changed lab to isolab_lib; changed flag to tr
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-04-12"
+__last_modified__ = "2024-04-16"
 __version__ = "1.0"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
@@ -35,7 +35,6 @@ import isolab_lib
 import os
 import re
 from shrekCN_lib import *
-from shrekCN_standards import *
 import sys
 import time
 
@@ -423,12 +422,6 @@ for file in filelist:
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
-
-        # in addition to the above project specific log file to write sample data to, write to this one that has all data ever
-        # with open(os.path.join(project_directory, 'shrekCN_analysis_log.csv'), 'a', newline='') as csvfile:
-        #     datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
-        #     for ii in range(len(meta_data['Analysis'])):
-        #         datawriter.writerow(eval(data_to_write))
 
         os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, archive_data_directory, file))  # done with datafile, put it in the archive directory
     else:
