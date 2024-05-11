@@ -16,12 +16,13 @@ Version 0.7 mod date 2022-03-23 => export data and headers comes from shrekCN_st
 Version 0.8 mod date 2022-12-31 => updated, linted, tested. I think this now works after a complete reprocess of all shrek CN data.
 Version 1.0 mod date 2024-04-08 => changed lab to isolab_lib; changed flag to trust, some refactoring for readability,
         function to handle sample notestrying to get this finished up to a version 1 level and upload to github
+Version 1.1 mod date 2024-04-23 => found possible bug in joining notes. Used a comma. I think it needed to be a semi-colon or something other than a comma since we are writing a csv file
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-04-16"
-__version__ = "1.0"
+__last_modified__ = "2024-04-23"
+__version__ = "1.1"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "Shrek"
@@ -407,7 +408,7 @@ for file in filelist:
                 trust = 0
                 sample_note('Run type unknown')
 
-            note = ", ".join(note)
+            note = "; ".join(note)
             append_supp_data()
 
         if os.path.isfile(os.path.join(project_directory, log_file_name)) is False:
