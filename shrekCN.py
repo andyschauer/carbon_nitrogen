@@ -17,12 +17,13 @@ Version 0.8 mod date 2022-12-31 => updated, linted, tested. I think this now wor
 Version 1.0 mod date 2024-04-08 => changed lab to isolab_lib; changed flag to trust, some refactoring for readability,
         function to handle sample notestrying to get this finished up to a version 1 level and upload to github
 Version 1.1 mod date 2024-04-23 => found possible bug in joining notes. Used a comma. I think it needed to be a semi-colon or something other than a comma since we are writing a csv file
+Version 1.2 mod date 2024-06-03 => added project level analysis log file and ability to choose one or create one. The script still writes to an exhaustive project-independent analysis log file
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-04-23"
-__version__ = "1.1"
+__last_modified__ = "2024-06-03"
+__version__ = "1.2"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "Shrek"
@@ -33,6 +34,7 @@ __acknowledgements__ = "Shrek"
 # -------------------- imports --------------------
 import csv
 import isolab_lib
+from numpy import where
 import os
 import re
 from shrekCN_lib import *
@@ -130,12 +132,33 @@ project_directory = isolab_lib.get_path("shrekCN", "project")
 new_data_directory = 'rawdata_new'
 archive_data_directory = 'rawdata_archive'
 junk_data_directory = 'rawdata_junk'
-log_file_name = 'shrekCN_analysis_log.csv'
+exhaustive_log_file_name = 'shrekCN_analysis_log.csv'
 
 if os.path.isdir(project_directory) is False:
     print('directory does not exist...exiting....')
     sys.exit()
 
+CN_log_file_list = isolab_lib.make_file_list(project_directory, '_analysis_log.csv')
+
+print('\nWhere do you want all this raw data to go?\n')
+
+[print(f'    {i}') for i in CN_log_file_list]
+identified_file = 0
+while identified_file == 0:
+    CN_log_file_search = input('\nEnter a project analysis log file from above that you wish to append raw data to or leave blank to create a new one: ')
+    if CN_log_file_search:
+        isfile = [CN_log_file_search[0: len(CN_log_file_search)] in x for x in CN_log_file_list]
+        if len(where(isfile)[0]) == 1:
+            identified_file = 1
+            project_log_file_name = CN_log_file_list[where(isfile)[0][0]]
+            print(f'    Appending to CN log file {project_log_file_name}...')
+        else:
+            print('\n** More than one file found. **\n')
+    else:
+        print("\n\nCreate a project analysis log file.")
+        project_log_file_name = input("Enter a project key word: ").replace(' ', '_')
+        project_log_file_name += "_analysis_log.csv"
+        identified_file = 1
 
 
 # -------------------- get list of files --------------------
@@ -411,21 +434,39 @@ for file in filelist:
             note = "; ".join(note)
             append_supp_data()
 
-        if os.path.isfile(os.path.join(project_directory, log_file_name)) is False:
-            with open(os.path.join(project_directory, log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
+
+        # write data to the exhaustive analysis log
+        if os.path.isfile(os.path.join(project_directory, exhaustive_log_file_name)) is False:
+            with open(os.path.join(project_directory, exhaustive_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 datawriter.writerow(shrekCN_analysis_log_headers)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
         else:
-            with open(os.path.join(project_directory, log_file_name), 'a', newline='') as csvfile:
+            with open(os.path.join(project_directory, exhaustive_log_file_name), 'a', newline='') as csvfile:
+                datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
+                for ii in range(len(meta_data['Analysis'])):
+                    datawriter.writerow(eval(data_to_write))
+
+        # write data to the project analysis log
+        if os.path.isfile(os.path.join(project_directory, project_log_file_name)) is False:
+            with open(os.path.join(project_directory, project_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
+                datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
+                datawriter.writerow(shrekCN_analysis_log_headers)
+                for ii in range(len(meta_data['Analysis'])):
+                    datawriter.writerow(eval(data_to_write))
+
+        else:
+            with open(os.path.join(project_directory, project_log_file_name), 'a', newline='') as csvfile:
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
         os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, archive_data_directory, file))  # done with datafile, put it in the archive directory
-    else:
-        os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, junk_data_directory, file))  # done with datafile, put it in the unread directory
+
+    else:  # not a C or N or CN data file
+        print(f"{file} is not recognized as a C or N or CN data file; putting it in thte junk folder")
+        os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, junk_data_directory, file))  # done with datafile, put it in the junk directory
 
 print("--- %s seconds ---" % (time.time() - start_time))
