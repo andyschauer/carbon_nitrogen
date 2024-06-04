@@ -5,14 +5,14 @@ Random items needed by both shrekCN.py and shrekCNcalibrate.py
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-04-16"
-__version__ = "1.0"
+__last_modified__ = "2024-06-03"
+__version__ = "1.1"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 
 
 refmat_list = ['NIST1547', 'GA1', 'GA2', 'SA', 'MAL', 'DSM']
-knowns_list = refmat_list[:] + ['zero', 'qtycal', 'blank', 'emptytin']
+knowns_list = refmat_list[:] + ['zero', 'qtycal', 'blank', 'emptytin', 'USGS40', 'USGS41']
 
 meta_headers = ['Amount', 'Analysis', 'Comment', 'Date', 'Identifier1', 'Identifier2', 'Information', 'Line', 'Method', 'Row', 'Time']
 
