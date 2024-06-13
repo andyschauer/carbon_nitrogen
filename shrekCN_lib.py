@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 Random items needed by both shrekCN.py and shrekCNcalibrate.py
+
+    Version 1.2 mod date 2024-06-09 => spacing for readability
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-03"
-__version__ = "1.1"
+__last_modified__ = "2024-06-09"
+__version__ = "1.2"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 
@@ -14,16 +16,15 @@ __license__ = "Apache 2.0"
 refmat_list = ['NIST1547', 'GA1', 'GA2', 'SA', 'MAL', 'DSM']
 knowns_list = refmat_list[:] + ['zero', 'qtycal', 'blank', 'emptytin', 'USGS40', 'USGS41']
 
-meta_headers = ['Amount', 'Analysis', 'Comment', 'Date', 'Identifier1', 'Identifier2', 'Information', 'Line', 'Method', 'Row', 'Time']
 
+meta_headers = ['Amount', 'Analysis', 'Comment', 'Date', 'Identifier1', 'Identifier2', 'Information', 'Line', 'Method', 'Row', 'Time']
 N_headers = ['AT15N14N', 'Ampl28', 'Ampl29', 'AreaAll', 'Area28', 'Area29', 'BGD28', 'BGD29', 'Gasconfiguration', 'R15N14N', 'R29N228N2', 'd15N14N',
              'd29N228N2', 'PeakNr', 'rArea28', 'rArea29', 'rR29N228N2', 'rd29N228N2', 'Start', 'Width']
-
 C_headers = ['AT13C12C', 'Ampl44', 'Ampl45', 'Ampl46', 'AreaAll', 'Area44', 'Area45', 'Area46', 'BGD44', 'BGD45', 'BGD46', 'Gasconfiguration',
              'PeakNr', 'R13C12C', 'R45CO244CO2', 'R46CO244CO2', 'd13C12C', 'd45CO244CO2', 'd46CO244CO2',
              'rArea45', 'rR45CO244CO2', 'rR46CO244CO2', 'rd45CO244CO2', 'rd46CO244CO2', 'Start', 'Width']
-
 supp_headers = ['file', 'trust', 'notes', 'peak_center', 'pyversions', 'empty']
+
 
 numlist = ['Amount', 'Analysis', 'Line','Row', 'N_wg_AT15N14N', 'N_wg_Ampl28', 'N_wg_Ampl29', 'N_wg_AreaAll', 'N_wg_Area28', 'N_wg_Area29', 'N_wg_BGD28', 'N_wg_BGD29',
            'N_wg_R15N14N', 'N_wg_R29N228N2', 'N_wg_d15N14N', 'N_wg_d29N228N2', 'N_wg_PeakNr', 'N_wg_rArea28', 'N_wg_rArea29', 'N_wg_rR29N228N2', 'N_wg_rd29N228N2', 'N_wg_Start',
@@ -36,25 +37,22 @@ numlist = ['Amount', 'Analysis', 'Line','Row', 'N_wg_AT15N14N', 'N_wg_Ampl28', '
            'C_wg_PeakNr', 'C_wg_R13C12C', 'C_wg_R45CO244CO2', 'C_wg_R46CO244CO2', 'C_wg_d13C12C', 'C_wg_d45CO244CO2', 'C_wg_d46CO244CO2', 'C_wg_rArea45', 'C_wg_rR45CO244CO2',
            'C_wg_rR46CO244CO2', 'C_wg_rd45CO244CO2', 'C_wg_rd46CO244CO2', 'C_wg_Start', 'C_wg_Width', 'trust', 'peak_center']
 
+
+blank = {'names': ['blank'],
+         'material': None,
+         'notes': 'no material dropped into EA'}
+emptytin = {'names': ['empty_tin', 'Empty Tin'],
+            'material': 'tin cups',
+            'percentN': None,
+            'percentC': None}
 qtycal = {'names': ['qtycal_GA1', 'qtycal_ga1', 'qtycal.GA1'],
           'material': 'GA1',
           'index': [],
           'fractionN': 0.0952,
           'fractionC': 0.4082,
           'notes': 'material weighed across a range to calibrate peak area to quantity'}
-
-blank = {'names': ['blank'],
-         'material': None,
-         'notes': 'no material dropped into EA'}
-
-emptytin = {'names': ['empty_tin', 'Empty Tin'],
-            'material': 'tin cups',
-            'percentN': None,
-            'percentC': None}
-
 zero = {'names': ['zero'],
         'material': 'reference gas peaks treated as unknowns'}
-
 
 
 meta_data = {}
