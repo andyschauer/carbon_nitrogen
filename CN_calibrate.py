@@ -14,12 +14,13 @@ Version 0.6 mod date 2022-05-19 => adding more to figures and generally trying t
 Version 0.7 mod date 2022-10-04 => combined shrekCNlog with shrekCNcalibrate. use "--verbose" argument when calling to get more log type info. Without, it will output a more sample data focused report (although, this report is not yet made)
 Version 1.0 mod date 2024-04-10 => trying to get this finished up to a version 1 level and upload to github
 Version 2.0 mod date 2024-06-03 => removed all specific standard references in favor of the automatically chosen type; code now separates out individual runs to be calibrated individually; also creates a summary file but this file still requires a fair bit of manual work to get it presentable
+Version 2.1 mod date 2024-06-19 => made instrument a variable, added unify argument, started updating for bokeh deprecations, renamed to be CN_calibrate.py
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-03"
-__version__ = "2.0"
+__last_modified__ = "2024-06-20"
+__version__ = "2.1"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "Shrek"
@@ -33,16 +34,15 @@ from bokeh.layouts import row, column, grid
 from bokeh.plotting import figure
 from bokeh.resources import CDN, INLINE
 from bokeh.embed import file_html
+from CN_lib import *
 import csv
 import datetime as dt
 import dateutil.parser
-import isolab_lib
 import json
 import matplotlib.pyplot as pplt
 import numpy as np
 import os
 import re
-from shrekCN_lib import *
 import shutil
 import sys
 import time
@@ -56,23 +56,33 @@ def add_calculation_note(note):
 
 
 
-# ---------- setup ---------- 
-print('Setup...')
-
-# verbose mode
+# ---------- ARGUMENTS ----------
+argument_string = '' 
 parser = argparse.ArgumentParser()
 parser.add_argument("--verbose", help="Include exhaustive diagnostic information and figures in report.", action="store_true")
+parser.add_argument("--unify", help="Calibrate the entire log file as a single unified run.", action="store_true")
 args = parser.parse_args()
 if args.verbose:
     verbose = True
-    print('\n    ****    Verbose mode on    ****    ')
+    argument_string += 'verbose, '
 else:
     verbose = False
+if args.unify:
+    unify = True
+    argument_string += 'unified calibration, '
+else:
+    unify = False
+print(f'\nArguments: {argument_string}')
 
+
+
+# ---------- SETUP ---------- 
 version = os.path.basename(__file__) + ' - ' + time.ctime(os.path.getctime(__file__))
 
-python_directory = isolab_lib.get_path("shrekCN", "python")
-method_directory = isolab_lib.get_path("shrekCN", "project")
+INSTRUMENT = "shrekCN"
+
+python_directory = get_path(INSTRUMENT, "python")
+method_directory = get_path(INSTRUMENT, "project")
 new_data_directory = 'rawdata_new'
 archive_data_directory = 'rawdata_archive'
 junk_data_directory = 'rawdata_junk'
@@ -80,7 +90,7 @@ junk_data_directory = 'rawdata_junk'
 python_scripts = {'shrekCN_lib.py': '', 'shrekCN.py': '', 'shrekCNcalibrate.py': ''}
 python_scripts = {key: (time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(f'{python_directory}{key}')))) for key, value in python_scripts.items()}
 
-CN_log_file_list = isolab_lib.make_file_list(method_directory, '_analysis_log.csv')
+CN_log_file_list = make_file_list(method_directory, '_analysis_log.csv')
 
 print('\nWhat analysis log file to you wish to process?\n')
 
@@ -114,7 +124,7 @@ summary_data_file = os.path.join(project_directory, summary_data_filename)
 
 
 # ---------- load reference material information ----------
-with open(isolab_lib.get_path("shrekCN", "standards"), 'r') as f:
+with open(get_path(INSTRUMENT, "standards"), 'r') as f:
     refmat = json.load(f)
 
 refmat_keys = refmat['organics'].keys()
@@ -126,7 +136,7 @@ for i in refmat_keys:
 
 # ---------- get data ---------- 
 print('Reading in data...')
-headers, data = isolab_lib.read_file(os.path.join(method_directory, log_file_name), ',')
+headers, data = read_file(os.path.join(method_directory, log_file_name), ',')
 entire_data_set = data.copy()
 strlist = set(headers) - set(numlist)
 
@@ -134,9 +144,15 @@ strlist = set(headers) - set(numlist)
 
 # ---------- Get indices of standards, samples, and anything else we may need to know the location in the array ----------
 
-runs = {'files': list(set(data['file']))}
-runs['indices'] = [np.where(np.asarray(data['file'])==i)[0] for i in runs['files']]
-runs['names'] = [dateutil.parser.parse(data['Date'][i[0]]).strftime("%Y%m%d") for i in runs['indices']]
+if unify:
+    runs = {'files': log_file_name}
+    runs['indices'] = [np.where(data['Analysis'])[0]]
+    runs['names'] = [dateutil.parser.parse(data['Date'][i[0]]).strftime("%Y%m%d") for i in runs['indices']]
+else:
+    runs = {'files': list(set(data['file']))}
+    runs['indices'] = [np.where(np.asarray(data['file'])==i)[0] for i in runs['files']]
+    runs['names'] = [dateutil.parser.parse(data['Date'][i[0]]).strftime("%Y%m%d") for i in runs['indices']]
+
 
 
 for current_run_index, current_run_name in enumerate(runs['names']):
@@ -162,15 +178,28 @@ for current_run_index, current_run_name in enumerate(runs['names']):
 
     calculation_notes = []
 
-    knowns_indices = []
-    for i in knowns_list:
-        temp_indices = [j for j, e in enumerate(Identifier1) if str(e).lower() in (name.lower() for name in eval(i)['names'])]
-        eval(i)['index'] = temp_indices
-        knowns_indices.extend(eval(i)['index'])
 
-    included_isotope_standards = list(set([i for i in Identifier1 if i in refmat_list]))
+    # ------------------- Indices --------------------------
+    all_indices = [i for i, _ in enumerate(Analysis)]
 
-    sample_indices = list(set(range(0,len(Analysis))) - set(knowns_indices))
+    non_samples_indices = []
+    for i in non_samples_list:
+        eval(i)['index'] = [j for j, e in enumerate(Identifier1) if str(e).lower() in (name.lower() for name in eval(i)['names'])]
+        non_samples_indices.extend(eval(i)['index'])
+
+    included_isotope_standards = list(set([i for i in Identifier1 if i in calibration_standards]))
+    sample_indices = list(set(all_indices) - set(non_samples_indices))
+
+
+    # knowns_indices = []
+    # for i in knowns_list:
+    #     temp_indices = [j for j, e in enumerate(Identifier1) if str(e).lower() in (name.lower() for name in eval(i)['names'])]
+    #     eval(i)['index'] = temp_indices
+    #     knowns_indices.extend(eval(i)['index'])
+
+    # included_isotope_standards = list(set([i for i in Identifier1 if i in calibration_standards]))
+
+    # sample_indices = list(set(range(0,len(Analysis))) - set(knowns_indices))
 
 
 
@@ -259,16 +288,33 @@ for current_run_index, current_run_name in enumerate(runs['names']):
                                     (Cqty[eval(d13C_std_3)['index']] - Amount[eval(d13C_std_3)['index']] * eval(d13C_std_3)['fractionC']) * 1000))
 
 
-    eval(d15N_std_1)['d15N_residual'] = N_sam_d15N14N[eval(d15N_std_1)['index']] - np.nanmean(N_sam_d15N14N[eval(d15N_std_1)['index']])
-    eval(d15N_std_2)['d15N_residual'] = N_sam_d15N14N[eval(d15N_std_2)['index']] - np.nanmean(N_sam_d15N14N[eval(d15N_std_2)['index']])
-    eval(d15N_std_3)['d15N_residual'] = N_sam_d15N14N[eval(d15N_std_3)['index']] - np.nanmean(N_sam_d15N14N[eval(d15N_std_3)['index']])
+    # ----------------- good data index - gdi ---------------------------
+
+    gdi = np.asarray(all_indices)
+    # gdi = np.where(Nqty>0.050)[0] 
+
+
+    eval(d15N_std_1)['gdi'] = np.intersect1d(eval(d15N_std_1)['index'], gdi)
+    eval(d15N_std_2)['gdi'] = np.intersect1d(eval(d15N_std_2)['index'], gdi)
+    eval(d15N_std_3)['gdi'] = np.intersect1d(eval(d15N_std_3)['index'], gdi)
+
+
+    for refmat in reference_material_list:
+        if eval(refmat)['index']:
+            eval(refmat)['d15N_residual'] = N_sam_d15N14N[eval(refmat)['index']] - np.nanmean(N_sam_d15N14N[np.intersect1d(eval(refmat)['index'], gdi)])
+            eval(refmat)['d13C_residual'] = C_sam_d13C12C[eval(refmat)['index']] - np.nanmean(C_sam_d13C12C[eval(refmat)['index']])
+        else:
+            eval(refmat)['d15N_residual'] = []
+            eval(refmat)['d13C_residual'] = []
+
+
     d15N_residual_std = np.std(np.concatenate([eval(d15N_std_1)['d15N_residual'], eval(d15N_std_2)['d15N_residual'], eval(d15N_std_3)['d15N_residual']]))
 
 
     eval(d13C_std_1)['d13C_residual'] = C_sam_d13C12C[eval(d13C_std_1)['index']] - np.nanmean(C_sam_d13C12C[eval(d13C_std_1)['index']])
     eval(d13C_std_2)['d13C_residual'] = C_sam_d13C12C[eval(d13C_std_2)['index']] - np.nanmean(C_sam_d13C12C[eval(d13C_std_2)['index']])
     eval(d13C_std_3)['d13C_residual'] = C_sam_d13C12C[eval(d13C_std_3)['index']] - np.nanmean(C_sam_d13C12C[eval(d13C_std_3)['index']])
-    d13C_residual_std = np.std(np.concatenate([eval(d13C_std_1)['d13C_residual'], eval(d13C_std_2)['d13C_residual'], eval(d13C_std_3)['d13C_residual']]))
+    d13C_residual_std = np.std(np.concatenate([eval(d13C_std_2)['d13C_residual'], eval(d13C_std_2)['d13C_residual'], eval(d13C_std_3)['d13C_residual']]))
 
 
 
@@ -315,7 +361,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
 
 
     # populate current run dictionary 
-    runs[current_run_name] = {'knowns_indices': knowns_indices,
+    runs[current_run_name] = {'non_samples_indices': non_samples_indices,
                               'sample_indices': sample_indices,
                               'Identifier1': Identifier1,
                               'Date': Date,
@@ -339,8 +385,8 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="Nitrogen- and carbon-sample-peak start time vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].triangle(Analysis, N_sam_Start, legend_label="Nitrogen", size=8, color="blue", alpha=0.8)
-        figures[fig_n]['fig'].square(Analysis, C_sam_Start, legend_label="Carbon", size=8, color="black", alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, N_sam_Start, legend_label="Nitrogen", marker='triangle', size=8, color="blue", alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, C_sam_Start, legend_label="Carbon", marker='square', size=8, color="black", alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = "Sample peak start time (seconds)"
         figures[fig_n]['fig'].xaxis.axis_label = "Analysis number"
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -355,7 +401,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="Nitrogen- and carbon-sample-peak width vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].circle(Analysis, C_sam_Start-(N_sam_Start+N_sam_Width), size=8, color="red", alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, C_sam_Start-(N_sam_Start+N_sam_Width), marker='circle', size=8, color="red", alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = "Sample peak separation (seconds)"
         figures[fig_n]['fig'].xaxis.axis_label = "Analysis number"
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -370,8 +416,8 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="Nitrogen and carbon sample peak separation vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].triangle(Analysis, N_sam_Width, legend_label="Nitrogen", size=8, color="blue", alpha=0.8)
-        figures[fig_n]['fig'].square(Analysis, C_sam_Width, legend_label="Carbon", size=8, color="black", alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, N_sam_Width, legend_label="Nitrogen", marker='triangle', size=8, color="blue", alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, C_sam_Width, legend_label="Carbon", marker='square', size=8, color="black", alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = "Sample peak width (seconds)"
         figures[fig_n]['fig'].xaxis.axis_label = "Analysis number"
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -386,8 +432,8 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="Nitrogen- and carbon-sample-peak height vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].triangle(Analysis, N_sam_Ampl28, legend_label="Nitrogen", size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].square(Analysis, C_sam_Ampl44, legend_label="Carbon", size=8, color='black', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, N_sam_Ampl28, legend_label="Nitrogen", marker='triangle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, C_sam_Ampl44, legend_label="Carbon", marker='square', size=8, color='black', alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = 'Peak amplitude (mV)'
         figures[fig_n]['fig'].xaxis.axis_label = 'Analysis number'
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -406,11 +452,11 @@ for current_run_index, current_run_name in enumerate(runs['names']):
                                 The nitrogen amount of the other standards is also considered known and plotted here as such. We are
                                 assuming, however, that we do not know the nitrogen amount for the samples."""
     figures[fig_n]['fig'] = figure(title="Peak Area vs Nitrogen quantity", width=1200, height=600, background_fill_color="#fafafa")
-    figures[fig_n]['fig'].circle(qtycal['Nqty'], N_sam_AreaAll_blank_corr[qtycal['index']], legend_label="qtycal", size=12, fill_color='yellow', line_color='black', alpha=0.8)
-    figures[fig_n]['fig'].circle(Amount[eval(d15N_std_1)['index']] * eval(d15N_std_1)['fractionN'], N_sam_AreaAll_blank_corr[eval(d15N_std_1)['index']], legend_label=d15N_std_1, size=8, color='green', alpha=0.8)
-    figures[fig_n]['fig'].circle(Amount[eval(d15N_std_2)['index']] * eval(d15N_std_2)['fractionN'], N_sam_AreaAll_blank_corr[eval(d15N_std_2)['index']], legend_label=d15N_std_2, size=8, color='blue', alpha=0.8)
-    figures[fig_n]['fig'].circle(Amount[eval(d15N_std_3)['index']] * eval(d15N_std_3)['fractionN'], N_sam_AreaAll_blank_corr[eval(d15N_std_3)['index']], legend_label=d15N_std_3, size=8, color='red', alpha=0.8)
-    figures[fig_n]['fig'].circle(Nqty[sample_indices], N_sam_AreaAll_blank_corr[sample_indices], legend_label="samples", size=6, color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(qtycal['Nqty'], N_sam_AreaAll_blank_corr[qtycal['index']], legend_label="qtycal", marker='circle', size=12, fill_color='yellow', line_color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Amount[eval(d15N_std_1)['index']] * eval(d15N_std_1)['fractionN'], N_sam_AreaAll_blank_corr[eval(d15N_std_1)['index']], legend_label=d15N_std_1, marker='circle', size=8, color='green', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Amount[eval(d15N_std_2)['index']] * eval(d15N_std_2)['fractionN'], N_sam_AreaAll_blank_corr[eval(d15N_std_2)['index']], legend_label=d15N_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Amount[eval(d15N_std_3)['index']] * eval(d15N_std_3)['fractionN'], N_sam_AreaAll_blank_corr[eval(d15N_std_3)['index']], legend_label=d15N_std_3, marker='circle', size=8, color='red', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Nqty[sample_indices], N_sam_AreaAll_blank_corr[sample_indices], legend_label="samples", marker='circle', size=6, color='black', alpha=0.8)
     figures[fig_n]['fig'].line(([np.nanmin(N_sam_AreaAll_blank_corr), np.nanmax(N_sam_AreaAll_blank_corr)] - qtycal['Nfit'][1]) / qtycal['Nfit'][0], [np.nanmin(N_sam_AreaAll_blank_corr), np.nanmax(N_sam_AreaAll_blank_corr)], line_width=3, color='black')
     figures[fig_n]['fig'].legend.location = 'top_left'
     figures[fig_n]['fig'].yaxis.axis_label = 'Peak Area (Vs)'
@@ -430,10 +476,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
                                     of the data used in the fit may be assessed by the residual standard deviation (<strong>2-&sigma;={np.round(np.std(qtycal['Nresidual'])*2, 1)} &micro;g</strong>). The 
                                     isotope reference materials have a residual <strong>2-&sigma;={np.round(np.std(Nqty_residual)*2, 1)} &micro;g</strong>."""
         figures[fig_n]['fig'] = figure(title="Nitrogen quantity residual vs Analysis number", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].circle(Analysis[qtycal['index']], qtycal['Nresidual'], legend_label="qtycal", size=12, fill_color='yellow', line_color='black', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d15N_std_1)['index']], (Nqty[eval(d15N_std_1)['index']] - Amount[eval(d15N_std_1)['index']] * eval(d15N_std_1)['fractionN']) * 1000, legend_label=d15N_std_1, size=8, color='green', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d15N_std_2)['index']], (Nqty[eval(d15N_std_2)['index']] - Amount[eval(d15N_std_2)['index']] * eval(d15N_std_2)['fractionN']) * 1000, legend_label=d15N_std_2, size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d15N_std_3)['index']], (Nqty[eval(d15N_std_3)['index']] - Amount[eval(d15N_std_3)['index']] * eval(d15N_std_3)['fractionN']) * 1000, legend_label=d15N_std_3, size=8, color='red', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[qtycal['index']], qtycal['Nresidual'], legend_label="qtycal", marker='circle', size=12, fill_color='yellow', line_color='black', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d15N_std_1)['index']], (Nqty[eval(d15N_std_1)['index']] - Amount[eval(d15N_std_1)['index']] * eval(d15N_std_1)['fractionN']) * 1000, legend_label=d15N_std_1, marker='circle', size=8, color='green', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d15N_std_2)['index']], (Nqty[eval(d15N_std_2)['index']] - Amount[eval(d15N_std_2)['index']] * eval(d15N_std_2)['fractionN']) * 1000, legend_label=d15N_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d15N_std_3)['index']], (Nqty[eval(d15N_std_3)['index']] - Amount[eval(d15N_std_3)['index']] * eval(d15N_std_3)['fractionN']) * 1000, legend_label=d15N_std_3, marker='circle', size=8, color='red', alpha=0.8)
         figures[fig_n]['fig'].line([np.min(Analysis), np.max(Analysis)], [0, 0], line_width=3, color='black')
         figures[fig_n]['fig'].legend.location = 'top_left'
         figures[fig_n]['fig'].yaxis.axis_label = 'Nitrogen quantity residual (&micro;g)'
@@ -453,11 +499,11 @@ for current_run_index, current_run_name in enumerate(runs['names']):
                                 The carbon amount of the other standards is also considered known and plotted here as such. We are
                                 assuming, however, that we do not know the carbon amount for the samples."""
     figures[fig_n]['fig'] = figure(title="Peak Area vs Carbon quantity", width=1200, height=600, background_fill_color="#fafafa")
-    figures[fig_n]['fig'].circle(qtycal['Cqty'], C_sam_AreaAll[qtycal['index']], legend_label="qtycal", size=12, fill_color='yellow', line_color='black', alpha=0.8)
-    figures[fig_n]['fig'].circle(Amount[eval(d13C_std_1)['index']] * eval(d13C_std_1)['fractionC'], C_sam_AreaAll[eval(d13C_std_1)['index']], legend_label=d13C_std_1, size=8, color='green', alpha=0.8)
-    figures[fig_n]['fig'].circle(Amount[eval(d13C_std_2)['index']] * eval(d13C_std_2)['fractionC'], C_sam_AreaAll[eval(d13C_std_2)['index']], legend_label=d13C_std_2, size=8, color='blue', alpha=0.8)
-    figures[fig_n]['fig'].circle(Amount[eval(d13C_std_3)['index']] * eval(d13C_std_3)['fractionC'], C_sam_AreaAll[eval(d13C_std_3)['index']], legend_label=d13C_std_3, size=8, color='red', alpha=0.8)
-    figures[fig_n]['fig'].circle(Cqty[sample_indices], C_sam_AreaAll[sample_indices], legend_label="samples", size=6, color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(qtycal['Cqty'], C_sam_AreaAll[qtycal['index']], legend_label="qtycal", marker='circle', size=12, fill_color='yellow', line_color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Amount[eval(d13C_std_1)['index']] * eval(d13C_std_1)['fractionC'], C_sam_AreaAll[eval(d13C_std_1)['index']], legend_label=d13C_std_1, marker='circle', size=8, color='green', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Amount[eval(d13C_std_2)['index']] * eval(d13C_std_2)['fractionC'], C_sam_AreaAll[eval(d13C_std_2)['index']], legend_label=d13C_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Amount[eval(d13C_std_3)['index']] * eval(d13C_std_3)['fractionC'], C_sam_AreaAll[eval(d13C_std_3)['index']], legend_label=d13C_std_3, marker='circle', size=8, color='red', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Cqty[sample_indices], C_sam_AreaAll[sample_indices], legend_label="samples", marker='circle', size=6, color='black', alpha=0.8)
     figures[fig_n]['fig'].line(([np.nanmin(C_sam_AreaAll), np.nanmax(C_sam_AreaAll)] - qtycal['Cfit'][1]) / qtycal['Cfit'][0], [np.nanmin(C_sam_AreaAll), np.nanmax(C_sam_AreaAll)], line_width=3, color='black')
     figures[fig_n]['fig'].legend.location = 'top_left'
     figures[fig_n]['fig'].yaxis.axis_label = 'Peak Area (Vs)'
@@ -477,10 +523,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
                                     of the data used in the fit may be assessed by the residual standard deviation (<strong>2-&sigma;={np.round(np.std(qtycal['Cresidual'])*2, 1)} &micro;g</strong>). The 
                                     isotope reference materials have a residual <strong>2-&sigma;={np.round(np.std(Cqty_residual)*2, 1)} &micro;g</strong>."""
         figures[fig_n]['fig'] = figure(title="Carbon quantity residual vs Analysis number", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].circle(Analysis[qtycal['index']], qtycal['Cresidual'], legend_label="qtycal", size=12, fill_color='yellow', line_color='black', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d13C_std_1)['index']], (Cqty[eval(d13C_std_1)['index']] - Amount[eval(d13C_std_1)['index']] * eval(d13C_std_1)['fractionC']) * 1000, legend_label=d13C_std_1, size=8, color='green', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d13C_std_2)['index']], (Cqty[eval(d13C_std_2)['index']] - Amount[eval(d13C_std_2)['index']] * eval(d13C_std_2)['fractionC']) * 1000, legend_label=d13C_std_2, size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d13C_std_3)['index']], (Cqty[eval(d13C_std_3)['index']] - Amount[eval(d13C_std_3)['index']] * eval(d13C_std_3)['fractionC']) * 1000, legend_label=d13C_std_3, size=8, color='red', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[qtycal['index']], qtycal['Cresidual'], legend_label="qtycal", marker='circle', size=12, fill_color='yellow', line_color='black', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d13C_std_1)['index']], (Cqty[eval(d13C_std_1)['index']] - Amount[eval(d13C_std_1)['index']] * eval(d13C_std_1)['fractionC']) * 1000, legend_label=d13C_std_1, marker='circle', size=8, color='green', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d13C_std_2)['index']], (Cqty[eval(d13C_std_2)['index']] - Amount[eval(d13C_std_2)['index']] * eval(d13C_std_2)['fractionC']) * 1000, legend_label=d13C_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d13C_std_3)['index']], (Cqty[eval(d13C_std_3)['index']] - Amount[eval(d13C_std_3)['index']] * eval(d13C_std_3)['fractionC']) * 1000, legend_label=d13C_std_3, marker='circle', size=8, color='red', alpha=0.8)
         figures[fig_n]['fig'].line([np.min(Analysis), np.max(Analysis)], [0, 0], line_width=3, color='black')
         figures[fig_n]['fig'].legend.location = 'top_left'
         figures[fig_n]['fig'].yaxis.axis_label = 'Carbon quantity residual (&micro;g)'
@@ -497,9 +543,12 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="d15N residual", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].circle(Analysis[eval(d15N_std_1)['index']], eval(d15N_std_1)['d15N_AirN2_residual'], legend_label=d15N_std_1, size=8, color='green', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d15N_std_2)['index']], eval(d15N_std_2)['d15N_AirN2_residual'], legend_label=d15N_std_2, size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d15N_std_3)['index']], eval(d15N_std_3)['d15N_AirN2_residual'], legend_label=d15N_std_3, size=8, color='red', alpha=0.8)
+        for refmat in reference_material_list:
+            figures[fig_n]['fig'].scatter(Analysis[eval(refmat)['index']], eval(refmat)['d15N_residual'], legend_label=refmat, marker='circle', size=8, color='black', alpha=0.8)
+
+        figures[fig_n]['fig'].scatter(Analysis[eval(d15N_std_1)['index']], eval(d15N_std_1)['d15N_AirN2_residual'], legend_label=d15N_std_1, marker='circle', size=8, color='green', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d15N_std_2)['index']], eval(d15N_std_2)['d15N_AirN2_residual'], legend_label=d15N_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d15N_std_3)['index']], eval(d15N_std_3)['d15N_AirN2_residual'], legend_label=d15N_std_3, marker='circle', size=8, color='red', alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = 'd15N vs AirN2 residual (permil)'
         figures[fig_n]['fig'].xaxis.axis_label = 'Analysis Number'
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -514,9 +563,9 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="d15N residual", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].circle(N_sam_AreaAll[eval(d15N_std_1)['index']], eval(d15N_std_1)['d15N_AirN2_residual'], legend_label=d15N_std_1, size=8, color='green', alpha=0.8)
-        figures[fig_n]['fig'].circle(N_sam_AreaAll[eval(d15N_std_2)['index']], eval(d15N_std_2)['d15N_AirN2_residual'], legend_label=d15N_std_2, size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].circle(N_sam_AreaAll[eval(d15N_std_3)['index']], eval(d15N_std_3)['d15N_AirN2_residual'], legend_label=d15N_std_3, size=8, color='red', alpha=0.8)
+        figures[fig_n]['fig'].scatter(N_sam_AreaAll[eval(d15N_std_1)['index']], eval(d15N_std_1)['d15N_AirN2_residual'], legend_label=d15N_std_1, marker='circle', size=8, color='green', alpha=0.8)
+        figures[fig_n]['fig'].scatter(N_sam_AreaAll[eval(d15N_std_2)['index']], eval(d15N_std_2)['d15N_AirN2_residual'], legend_label=d15N_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(N_sam_AreaAll[eval(d15N_std_3)['index']], eval(d15N_std_3)['d15N_AirN2_residual'], legend_label=d15N_std_3, marker='circle', size=8, color='red', alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = 'd15N vs AirN2 residual (permil)'
         figures[fig_n]['fig'].xaxis.axis_label = 'Peak Area (Vs)'
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -531,9 +580,9 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="d13C residual", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].circle(Analysis[eval(d13C_std_1)['index']], eval(d13C_std_1)['d13C_VPDB_residual'], legend_label=d13C_std_1, size=8, color='green', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d13C_std_2)['index']], eval(d13C_std_2)['d13C_VPDB_residual'], legend_label=d13C_std_2, size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].circle(Analysis[eval(d13C_std_3)['index']], eval(d13C_std_3)['d13C_VPDB_residual'], legend_label=d13C_std_3, size=8, color='red', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d13C_std_1)['index']], eval(d13C_std_1)['d13C_VPDB_residual'], legend_label=d13C_std_1, marker='circle', size=8, color='green', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d13C_std_2)['index']], eval(d13C_std_2)['d13C_VPDB_residual'], legend_label=d13C_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis[eval(d13C_std_3)['index']], eval(d13C_std_3)['d13C_VPDB_residual'], legend_label=d13C_std_3, marker='circle', size=8, color='red', alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = 'd13C VPDB residual (permil)'
         figures[fig_n]['fig'].xaxis.axis_label = 'Analysis Number'
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -548,9 +597,9 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}."""
         figures[fig_n]['fig'] = figure(title="d13C residual vs Peak Area", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].circle(C_sam_AreaAll[eval(d13C_std_1)['index']], eval(d13C_std_1)['d13C_VPDB_residual'], legend_label=d13C_std_1, size=8, color='green', alpha=0.8)
-        figures[fig_n]['fig'].circle(C_sam_AreaAll[eval(d13C_std_2)['index']], eval(d13C_std_2)['d13C_VPDB_residual'], legend_label=d13C_std_2, size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].circle(C_sam_AreaAll[eval(d13C_std_3)['index']], eval(d13C_std_3)['d13C_VPDB_residual'], legend_label=d13C_std_3, size=8, color='red', alpha=0.8)
+        figures[fig_n]['fig'].scatter(C_sam_AreaAll[eval(d13C_std_1)['index']], eval(d13C_std_1)['d13C_VPDB_residual'], legend_label=d13C_std_1, marker='circle', size=8, color='green', alpha=0.8)
+        figures[fig_n]['fig'].scatter(C_sam_AreaAll[eval(d13C_std_2)['index']], eval(d13C_std_2)['d13C_VPDB_residual'], legend_label=d13C_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(C_sam_AreaAll[eval(d13C_std_3)['index']], eval(d13C_std_3)['d13C_VPDB_residual'], legend_label=d13C_std_3, marker='circle', size=8, color='red', alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = 'd13C vs VPDB residual (permil)'
         figures[fig_n]['fig'].xaxis.axis_label = 'Peak Area (Vs)'
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -565,10 +614,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     figures[fig_n] = {}
     figures[fig_n]['cap'] = f"""Figure {fig_n}."""
     figures[fig_n]['fig'] = figure(title="d15N vs Nqty", width=1200, height=600, background_fill_color="#fafafa")
-    figures[fig_n]['fig'].circle(Nqty[eval(d15N_std_1)['index']], d15N_AirN2[eval(d15N_std_1)['index']], legend_label=d15N_std_1, size=8, color='green', alpha=0.8)
-    figures[fig_n]['fig'].circle(Nqty[eval(d15N_std_2)['index']], d15N_AirN2[eval(d15N_std_2)['index']], legend_label=d15N_std_2, size=8, color='blue', alpha=0.8)
-    figures[fig_n]['fig'].circle(Nqty[eval(d15N_std_3)['index']], d15N_AirN2[eval(d15N_std_3)['index']], legend_label=d15N_std_3, size=8, color='red', alpha=0.8)
-    figures[fig_n]['fig'].triangle(Nqty[sample_indices], d15N_AirN2[sample_indices], legend_label="samples", size=8, color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Nqty[eval(d15N_std_1)['index']], d15N_AirN2[eval(d15N_std_1)['index']], legend_label=d15N_std_1, marker='circle', size=8, color='green', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Nqty[eval(d15N_std_2)['index']], d15N_AirN2[eval(d15N_std_2)['index']], legend_label=d15N_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Nqty[eval(d15N_std_3)['index']], d15N_AirN2[eval(d15N_std_3)['index']], legend_label=d15N_std_3, marker='circle', size=8, color='red', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Nqty[sample_indices], d15N_AirN2[sample_indices], legend_label="samples", marker='triangle', size=8, color='black', alpha=0.8)
     figures[fig_n]['fig'].yaxis.axis_label = 'd15N vs AirN2 (permil)'
     figures[fig_n]['fig'].xaxis.axis_label = 'Nitrogen amount (mg)'
     figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -583,10 +632,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     figures[fig_n] = {}
     figures[fig_n]['cap'] = f"""Figure {fig_n}."""
     figures[fig_n]['fig'] = figure(title="d13C vs Cqty", width=1200, height=600, background_fill_color="#fafafa")
-    figures[fig_n]['fig'].circle(Cqty[eval(d13C_std_1)['index']], d13C_VPDB[eval(d13C_std_1)['index']], legend_label=d13C_std_1, size=8, color='green', alpha=0.8)
-    figures[fig_n]['fig'].circle(Cqty[eval(d13C_std_2)['index']], d13C_VPDB[eval(d13C_std_2)['index']], legend_label=d13C_std_2, size=8, color='blue', alpha=0.8)
-    figures[fig_n]['fig'].circle(Cqty[eval(d13C_std_3)['index']], d13C_VPDB[eval(d13C_std_3)['index']], legend_label=d13C_std_3, size=8, color='red', alpha=0.8)
-    figures[fig_n]['fig'].triangle(Cqty[sample_indices], d13C_VPDB[sample_indices], legend_label="samples", size=8, color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Cqty[eval(d13C_std_1)['index']], d13C_VPDB[eval(d13C_std_1)['index']], legend_label=d13C_std_1, marker='circle', size=8, color='green', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Cqty[eval(d13C_std_2)['index']], d13C_VPDB[eval(d13C_std_2)['index']], legend_label=d13C_std_2, marker='circle', size=8, color='blue', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Cqty[eval(d13C_std_3)['index']], d13C_VPDB[eval(d13C_std_3)['index']], legend_label=d13C_std_3, marker='circle', size=8, color='red', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Cqty[sample_indices], d13C_VPDB[sample_indices], legend_label="samples", marker='triangle', size=8, color='black', alpha=0.8)
     figures[fig_n]['fig'].yaxis.axis_label = 'd13C vs VPDB (permil)'
     figures[fig_n]['fig'].xaxis.axis_label = 'Carbon amount (mg)'
     figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -601,7 +650,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     figures[fig_n] = {}
     figures[fig_n]['cap'] = f"""Figure {fig_n}."""
     figures[fig_n]['fig'] = figure(title="d15N vs PercentN", width=1200, height=600, background_fill_color="#fafafa")
-    figures[fig_n]['fig'].triangle(Nqty[sample_indices]/Amount[sample_indices]*100, d15N_AirN2[sample_indices], legend_label="samples", size=8, color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Nqty[sample_indices]/Amount[sample_indices]*100, d15N_AirN2[sample_indices], legend_label="samples", marker='triangle', size=8, color='black', alpha=0.8)
     figures[fig_n]['fig'].yaxis.axis_label = 'd15N vs AirN2 (permil)'
     figures[fig_n]['fig'].xaxis.axis_label = 'Percent Nitrogen (%)'
     figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -616,7 +665,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     figures[fig_n] = {}
     figures[fig_n]['cap'] = f"""Figure {fig_n}."""
     figures[fig_n]['fig'] = figure(title="d13C vs PercentC", width=1200, height=600, background_fill_color="#fafafa")
-    figures[fig_n]['fig'].triangle(Cqty[sample_indices]/Amount[sample_indices]*100, d13C_VPDB[sample_indices], legend_label="samples", size=8, color='black', alpha=0.8)
+    figures[fig_n]['fig'].scatter(Cqty[sample_indices]/Amount[sample_indices]*100, d13C_VPDB[sample_indices], legend_label="samples", marker='triangle', size=8, color='black', alpha=0.8)
     figures[fig_n]['fig'].yaxis.axis_label = 'd13C vs VPDB (permil)'
     figures[fig_n]['fig'].xaxis.axis_label = 'Percent Carbon (%)'
     figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -653,7 +702,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     with open(calibrated_data_file, 'w', newline='') as csvfile:
         datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
         datawriter.writerow(calibrated_file_headers)
-        for ii in knowns_indices:
+        for ii in non_samples_indices:
             datawriter.writerow(eval(data_to_write))
         datawriter.writerow([])
         for ii in sample_indices:
@@ -675,7 +724,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
         if summary_file_exists is False:
             datawriter.writerow(summary_file_headers)
-        for ii in knowns_indices:
+        for ii in non_samples_indices:
             datawriter.writerow(eval(summary_data_to_write))
         for ii in sample_indices:
             datawriter.writerow(eval(summary_data_to_write))
@@ -761,7 +810,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
             <table>
                 <tr><td>Total number of project runs</td><td>{len(set(file))}</td></tr>
                 <tr><td>Total number of analyses in run</td><td>{len(set(Analysis))}</td></tr>
-                <tr><td>Total number of standards in run</td><td>{len(knowns_indices)}</td></tr>
+                <tr><td>Total number of standards in run</td><td>{len(non_samples_indices)}</td></tr>
                 <tr><td>Total number of samples in run</td><td>{len(sample_indices)}</td></tr>
                 <tr><td><br></td></tr>
                 <tr><td>Number of blanks in run</a></td><td>{len(blank['index'])}</td></tr>
@@ -774,7 +823,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         <div class="text-indent">
             <p>All internationally recognized reference material accepted values can be found at the CIAAW (http://www.ciaaw.org/).
             All IsoLab in-house reference material accepted values can be found at http://isolab.ess.washington.edu/isolab/reference-materials#solid.
-            For this particular analysis, the accepted values are from {isolab_lib.get_path('shrekCN', 'refmat_meta')}.
+            For this particular analysis, the accepted values are from {get_path('shrekCN', 'refmat_meta')}.
             The reference materials and their accepted values, normalized to the Air-N2 and VPDB scales, included in this run / set are:</p>
             <table>
                 <tr><th>Reference<br>name</th><th>Reference<br>material</th><th>d15N<br>accepted<br>(permil)</th><th>Percent<br>Nitrogen<br>(%)</th><th>d13C<br>accepted<br>(permil)</th><th>Percent<br>Carbon<br>(%)</th><th>Purpose</th></tr>
