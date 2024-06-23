@@ -15,12 +15,13 @@ Version 0.7 mod date 2022-10-04 => combined shrekCNlog with shrekCNcalibrate. us
 Version 1.0 mod date 2024-04-10 => trying to get this finished up to a version 1 level and upload to github
 Version 2.0 mod date 2024-06-03 => removed all specific standard references in favor of the automatically chosen type; code now separates out individual runs to be calibrated individually; also creates a summary file but this file still requires a fair bit of manual work to get it presentable
 Version 2.1 mod date 2024-06-22 => made instrument a variable, added unify argument, started updating for bokeh deprecations, renamed to be CN_calibrate.py, touched up figures a bit
+Version 2.2 mod date 2024-06-23 => mistake in Nqty and Cqty calculation found, needed to use the blank corrected peak areas, fixed now
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-22"
-__version__ = "2.1"
+__last_modified__ = "2024-06-23"
+__version__ = "2.2"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "Shrek"
@@ -229,8 +230,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         d15N_blank_corr = N_sam_d15N14N
         add_calculation_note("nitrogen blank correction NOT applied")
 
-    # need to add carbon blank correction which would come from tins and only noticable during undiluted carbon runs
-    d13C_blank_corr = C_sam_d13C12C
+
+    # ToDo: add carbon blank correction which would come from tins and only noticable during undiluted carbon runs
+    d13C_blank_corr = C_sam_d13C12C[:]
+    C_sam_AreaAll_blank_corr = C_sam_AreaAll
 
 
 
@@ -239,10 +242,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     qtycal['Nfit'] = np.polyfit(qtycal['Nqty'], N_sam_AreaAll_blank_corr[qtycal['index']], 1)
 
     qtycal['Cqty'] = Amount[qtycal['index']] * qtycal['fractionC']
-    qtycal['Cfit'] = np.polyfit(qtycal['Cqty'], C_sam_AreaAll[qtycal['index']], 1)
+    qtycal['Cfit'] = np.polyfit(qtycal['Cqty'], C_sam_AreaAll_blank_corr[qtycal['index']], 1)
 
-    Nqty = (N_sam_AreaAll - qtycal['Nfit'][1]) / qtycal['Nfit'][0]
-    Cqty = (C_sam_AreaAll - qtycal['Cfit'][1]) / qtycal['Cfit'][0]
+    Nqty = (N_sam_AreaAll_blank_corr - qtycal['Nfit'][1]) / qtycal['Nfit'][0]
+    Cqty = (C_sam_AreaAll_blank_corr - qtycal['Cfit'][1]) / qtycal['Cfit'][0]
 
     with np.errstate(divide='ignore', invalid='ignore'):
         PercentN = np.nan_to_num(Nqty / Amount * 100)
@@ -277,8 +280,8 @@ for current_run_index, current_run_name in enumerate(runs['names']):
 
 
     # ---------- Residuals ----------
-    qtycal['Nresidual'] = N_sam_AreaAll[qtycal['index']] - (qtycal['Nfit'][0] * qtycal['Nqty'] + qtycal['Nfit'][1])
-    qtycal['Cresidual'] = C_sam_AreaAll[qtycal['index']] - (qtycal['Cfit'][0] * qtycal['Cqty'] + qtycal['Cfit'][1])
+    qtycal['Nresidual'] = N_sam_AreaAll_blank_corr[qtycal['index']] - (qtycal['Nfit'][0] * qtycal['Nqty'] + qtycal['Nfit'][1])
+    qtycal['Cresidual'] = C_sam_AreaAll_blank_corr[qtycal['index']] - (qtycal['Cfit'][0] * qtycal['Cqty'] + qtycal['Cfit'][1])
 
     Nqty_residual = np.concatenate(((Nqty[eval(d15N_std_1)['index']] - Amount[eval(d15N_std_1)['index']] * eval(d15N_std_1)['fractionN']) * 1000,
                                     (Nqty[eval(d15N_std_2)['index']] - Amount[eval(d15N_std_2)['index']] * eval(d15N_std_2)['fractionN']) * 1000,
