@@ -19,12 +19,13 @@ Version 1.0 mod date 2024-04-08 => changed lab to isolab_lib; changed flag to tr
 Version 1.1 mod date 2024-04-23 => found possible bug in joining notes. Used a comma. I think it needed to be a semi-colon or something other than a comma since we are writing a csv file
 Version 1.2 mod date 2024-06-03 => added project level analysis log file and ability to choose one or create one. The script still writes to an exhaustive project-independent analysis log file
 Version 2.0 mod date 2024-06-21 => removed isolab_lib in favor of single CN_lib.py file
+Version 2.1 mod date 2024-06-23 => changed shrekCN to CN throughout
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-22"
-__version__ = "2.0"
+__last_modified__ = "2024-06-23"
+__version__ = "2.1"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "Shrek"
@@ -142,7 +143,7 @@ reference_materials_file = f"{home_directory}{config['local_directories']['stand
 new_data_directory = 'rawdata_new'
 archive_data_directory = 'rawdata_archive'
 junk_data_directory = 'rawdata_junk'
-exhaustive_log_file_name = 'shrekCN_analysis_log.csv'
+exhaustive_log_file_name = 'CN_analysis_log.csv'
 
 if os.path.isdir(method_directory) is False:
     print('directory does not exist...exiting....')
@@ -230,11 +231,12 @@ for file in filelist:
     sample_index_last_row = [j + index for index, j in zip(sample_index_first_row, rows_per_sample)]
 
     # run type - N, C, CN
-    if 'Gasconfiguration' in data:
-        gas_configuration = set(data['Gasconfiguration'])
+    gas_config_names_list = ['GasConfiguration', 'Gasconfiguration']
+    gas_config_name = [gas_config_name for gas_config_name in gas_config_names_list if gas_config_name in list(data.keys())]
+    if gas_config_name:
+        gas_configuration = set(data[gas_config_name[0]])
     else:
         gas_configuration = 'undefined'
-
     if any(index in ['N2', 'CO2'] for index in gas_configuration):
         if all(index in gas_configuration for index in ['N2', 'CO2']):
             run_type = 'CN'
@@ -271,12 +273,12 @@ for file in filelist:
 
                     # PeakNr2 could be Nsam or Cref or some other problem
                     peak_number_offset = 1
-                    if data['Gasconfiguration'][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
+                    if data['GasConfiguration'][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
                         sample_note('No carbon peaks')
                         append_N_sam_data()
                         C_sam_none()
                         C_wg_none()
-                    elif data['Gasconfiguration'][index + peak_number_offset] == 'CO2':  # Nsam and Csam are missing but Cref is present
+                    elif data['GasConfiguration'][index + peak_number_offset] == 'CO2':  # Nsam and Csam are missing but Cref is present
                         sample_note('No nitrogen or carbon sample peaks')
                         N_sam_none()
                         C_sam_none()
@@ -289,10 +291,10 @@ for file in filelist:
 
                     # PeakNr2
                     peak_number_offset = 1
-                    if data['Gasconfiguration'][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
+                    if data['GasConfiguration'][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
                         append_N_sam_data()
                         C_sam_none()
-                    elif data['Gasconfiguration'][index + peak_number_offset] == 'CO2':  # Nsam is missing but Csam is present
+                    elif data['GasConfiguration'][index + peak_number_offset] == 'CO2':  # Nsam is missing but Csam is present
                         N_sam_none()
                         append_C_sam_data()
 
@@ -319,7 +321,7 @@ for file in filelist:
 
                 elif rows == 5:
                     # determine which gas config has extra peak then assign peaks and exclude extra but make note of it
-                    if data['Gasconfiguration'][index:index + rows].count('N2') == 2:  # CO2 has extra peak
+                    if data['GasConfiguration'][index:index + rows].count('N2') == 2:  # CO2 has extra peak
                         sample_note('extra CO2 peak detected')
                         # PeakNr1 is Nref
                         peak_number_offset = 0
@@ -349,7 +351,7 @@ for file in filelist:
                         peak_number_offset = 4
                         append_C_wg_data()
 
-                    elif data['Gasconfiguration'][index:index + rows].count('CO2') == 2:  # N2 has extra peak
+                    elif data['GasConfiguration'][index:index + rows].count('CO2') == 2:  # N2 has extra peak
                         N_wg_none()
                         N_sam_none()
                         # PeakNr3 is Csam
@@ -450,7 +452,7 @@ for file in filelist:
         if os.path.isfile(os.path.join(method_directory, exhaustive_log_file_name)) is False:
             with open(os.path.join(method_directory, exhaustive_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
-                datawriter.writerow(shrekCN_analysis_log_headers)
+                datawriter.writerow(CN_analysis_log_headers)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
@@ -464,7 +466,7 @@ for file in filelist:
         if os.path.isfile(os.path.join(method_directory, project_log_file_name)) is False:
             with open(os.path.join(method_directory, project_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
-                datawriter.writerow(shrekCN_analysis_log_headers)
+                datawriter.writerow(CN_analysis_log_headers)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
