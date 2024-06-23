@@ -6,13 +6,14 @@ Functions, constants, and other useful stuff for carbon and nitrogen isotopic da
     Version 1.2 mod date 2024-06-09 => spacing for readability
     Version 2.0 mod date 2024-06-20 => changed how I refer to the standards: calibration_standards, etc; combined isolab_lib.py with shrekCN_lib.py and saved as CN_lib.py
     Version 2.1 mod date 2024-06-22 => removed items that change depending on instrument or location in favor of a CN_config.json file, removed get_path
+    Version 2.2 mod date 2024-06-23 => changed shrekCN to CN throughout
 """
 
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-22"
-__version__ = "2.1"
+__last_modified__ = "2024-06-23"
+__version__ = "2.2"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 
@@ -56,13 +57,13 @@ C_sam_data = {}
 C_wg_data = {}
 supp_data = {}
 
-shrekCN_analysis_log_headers = []
-shrekCN_analysis_log_headers.extend(meta_headers)
-shrekCN_analysis_log_headers.extend([f"N_wg_{i}" for i in N_headers])
-shrekCN_analysis_log_headers.extend([f"N_sam_{i}" for i in N_headers])
-shrekCN_analysis_log_headers.extend([f"C_sam_{i}" for i in C_headers])
-shrekCN_analysis_log_headers.extend([f"C_wg_{i}" for i in C_headers])
-shrekCN_analysis_log_headers.extend(supp_headers)
+CN_analysis_log_headers = []
+CN_analysis_log_headers.extend(meta_headers)
+CN_analysis_log_headers.extend([f"N_wg_{i}" for i in N_headers])
+CN_analysis_log_headers.extend([f"N_sam_{i}" for i in N_headers])
+CN_analysis_log_headers.extend([f"C_sam_{i}" for i in C_headers])
+CN_analysis_log_headers.extend([f"C_wg_{i}" for i in C_headers])
+CN_analysis_log_headers.extend(supp_headers)
 
 data_to_write = []
 data_to_write.extend([f"meta_data['{i}'][ii]" for i in meta_headers])
