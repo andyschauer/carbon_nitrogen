@@ -18,12 +18,13 @@ Version 1.0 mod date 2024-04-08 => changed lab to isolab_lib; changed flag to tr
         function to handle sample notestrying to get this finished up to a version 1 level and upload to github
 Version 1.1 mod date 2024-04-23 => found possible bug in joining notes. Used a comma. I think it needed to be a semi-colon or something other than a comma since we are writing a csv file
 Version 1.2 mod date 2024-06-03 => added project level analysis log file and ability to choose one or create one. The script still writes to an exhaustive project-independent analysis log file
+Version 2.0 mod date 2024-06-21 => removed isolab_lib in favor of single CN_lib.py file
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-03"
-__version__ = "1.2"
+__last_modified__ = "2024-06-22"
+__version__ = "2.0"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "Shrek"
@@ -33,11 +34,10 @@ __acknowledgements__ = "Shrek"
 
 # -------------------- imports --------------------
 import csv
-import isolab_lib
 from numpy import where
 import os
 import re
-from shrekCN_lib import *
+from CN_lib import *
 import sys
 import time
 
@@ -125,20 +125,30 @@ def sample_note(currnote):
 
 
 
-# -------------------- setup --------------------
-start_time = time.time()
+# ---------- LOAD CONFIGURATION ----------
+with open("CN_config.json", 'r') as f:
+    config = json.load(f)
+
+
+# -------------------- SETUP --------------------
+
 version = os.path.basename(__file__) + ' - ' + time.ctime(os.path.getctime(__file__))
-project_directory = isolab_lib.get_path("shrekCN", "project")
+
+home_directory = config["local_directories"]["home"]
+python_directory = f"{home_directory}{config['local_directories']['python']}"
+method_directory = f"{home_directory}{config['local_directories']['method_data_directory']}"
+reference_materials_file = f"{home_directory}{config['local_directories']['standards']}"
+
 new_data_directory = 'rawdata_new'
 archive_data_directory = 'rawdata_archive'
 junk_data_directory = 'rawdata_junk'
 exhaustive_log_file_name = 'shrekCN_analysis_log.csv'
 
-if os.path.isdir(project_directory) is False:
+if os.path.isdir(method_directory) is False:
     print('directory does not exist...exiting....')
     sys.exit()
 
-CN_log_file_list = isolab_lib.make_file_list(project_directory, '_analysis_log.csv')
+CN_log_file_list = make_file_list(method_directory, '_analysis_log.csv')
 
 print('\nWhere do you want all this raw data to go?\n')
 
@@ -162,7 +172,7 @@ while identified_file == 0:
 
 
 # -------------------- get list of files --------------------
-filelist = isolab_lib.make_file_list(os.path.join(project_directory, new_data_directory), 'csv')
+filelist = make_file_list(os.path.join(method_directory, new_data_directory), 'csv')
 if not filelist:
     print('No files in raw data directory.')
 else:
@@ -186,12 +196,13 @@ for file in filelist:
     for i in supp_headers:
         supp_data[i] = []
 
-    headers, data = isolab_lib.read_file(os.path.join(project_directory, new_data_directory, file), ',')  # read file and return headers (headers) and data (data)
+    print(f"\nReading in file {file}...")
+    headers, data = read_file(os.path.join(method_directory, new_data_directory, file), ',')  # read file and return headers (headers) and data (data)
 
     # test for file problems
     if 'Analysis' not in headers:
         print('problem with file ' + file)
-        os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, junk_data_directory, file))  # done with datafile, put it in the unread directory
+        os.rename(os.path.join(method_directory, new_data_directory, file), os.path.join(method_directory, junk_data_directory, file))  # done with datafile, put it in the unread directory
         print('file ' + file + ' was moved to the junk folder')
         continue
 
@@ -200,7 +211,7 @@ for file in filelist:
             data['Analysis'] = [int(index) for index in data['Analysis']]
         except ValueError:
             print(f'File {file} contains strings in the Analysis column')
-            os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, junk_data_directory, file))  # done with datafile, put it in the unread directory
+            os.rename(os.path.join(method_directory, new_data_directory, file), os.path.join(method_directory, junk_data_directory, file))  # done with datafile, put it in the unread directory
             print(f'File {file} was moved to the junk folder.')
             continue
 
@@ -436,37 +447,39 @@ for file in filelist:
 
 
         # write data to the exhaustive analysis log
-        if os.path.isfile(os.path.join(project_directory, exhaustive_log_file_name)) is False:
-            with open(os.path.join(project_directory, exhaustive_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
+        if os.path.isfile(os.path.join(method_directory, exhaustive_log_file_name)) is False:
+            with open(os.path.join(method_directory, exhaustive_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 datawriter.writerow(shrekCN_analysis_log_headers)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
         else:
-            with open(os.path.join(project_directory, exhaustive_log_file_name), 'a', newline='') as csvfile:
+            with open(os.path.join(method_directory, exhaustive_log_file_name), 'a', newline='') as csvfile:
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
         # write data to the project analysis log
-        if os.path.isfile(os.path.join(project_directory, project_log_file_name)) is False:
-            with open(os.path.join(project_directory, project_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
+        if os.path.isfile(os.path.join(method_directory, project_log_file_name)) is False:
+            with open(os.path.join(method_directory, project_log_file_name), 'w', newline='') as csvfile:  # if the log file has not been created, create it with column headers and data
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 datawriter.writerow(shrekCN_analysis_log_headers)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
         else:
-            with open(os.path.join(project_directory, project_log_file_name), 'a', newline='') as csvfile:
+            with open(os.path.join(method_directory, project_log_file_name), 'a', newline='') as csvfile:
                 datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 for ii in range(len(meta_data['Analysis'])):
                     datawriter.writerow(eval(data_to_write))
 
-        os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, archive_data_directory, file))  # done with datafile, put it in the archive directory
+        os.rename(os.path.join(method_directory, new_data_directory, file), os.path.join(method_directory, archive_data_directory, file))  # done with datafile, put it in the archive directory
 
     else:  # not a C or N or CN data file
-        print(f"{file} is not recognized as a C or N or CN data file; putting it in thte junk folder")
-        os.rename(os.path.join(project_directory, new_data_directory, file), os.path.join(project_directory, junk_data_directory, file))  # done with datafile, put it in the junk directory
+        print(f"{file} is not recognized as a C or N or CN data file; putting it in the junk folder")
+        os.rename(os.path.join(method_directory, new_data_directory, file), os.path.join(method_directory, junk_data_directory, file))  # done with datafile, put it in the junk directory
 
-print("--- %s seconds ---" % (time.time() - start_time))
+
+print("\nDone")
+print("\n\nYou may now wish to run CN_calibrate.py by typing 'python3 CN_calibrate.py' without the quotes. You may also type 'python3 -i CN_calibrate.py --verbose' for more figures.\n\n\n")
