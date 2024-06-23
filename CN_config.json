@@ -1,0 +1,52 @@
+{
+    "file_meta_data": {
+        "file": "CN_config.json",
+        "author": "aschauer@uw.edu",
+        "modification_date": "2024.06.21",
+        "ChangeLog": {
+            "v0.1": {
+                "changes": "created for CN method configuration"
+            }
+        }
+    },
+    "local_directories": {
+        "home": "/home/aschauer/",
+        "python": "carbon_nitrogen/",
+        "standards": "reference_materials/reference_materials.json",
+        "method_data_directory": "projects/shrekCN/"
+    },
+    "standards": {
+        "calibration_standards": ["SA", "GA1", "GA2"],
+        "ancillary_standards": ["Cocoa", "NIST1547", "USGS40", "USGS41", "MAL", "DSM"],
+        "other_standards": {
+            "blank": {
+                "names": ["blank", "void"],
+                "material": "Nothing",
+                "notes": "no material dropped into EA"
+            },
+            "emptytin": {
+                "names": ["empty_tin", "Empty Tin"],
+                "material": "tin cup",
+                "percentN": null,
+                "percentC": null
+            },
+            "qtycal": {
+                "names": ["qtycal_GA1", "qtycal_ga1", "qtycal.GA1"],
+                "material": "GA1",
+                "fractionN": 0.0952,
+                "fractionC": 0.4082,
+                "notes": "material weighed across a range to calibrate peak area to quantity"
+            },
+            "zero": {
+                "names": ["zero"],
+                "material": "reference gas peaks treated as unknowns"
+            }
+        }
+    },
+    "methods": {
+        "instrumentation": "Eurovector Elemental Analyzer coupled to a Conflo II followed by a ThermoFinnigan MAT 253.",
+        "procedure": "https://isolab.ess.washington.edu/laboratory/solid-CN.php",
+        "procedure_link": "https://isolab.ess.washington.edu/laboratory/solid-CN.php",
+        "standards_link": "https://isolab.ess.washington.edu/isolab/reference-materials#solid"
+    }
+}
