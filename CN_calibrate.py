@@ -2,7 +2,7 @@
 """
 This is the calibration script for carbon and nitrogen stable isotope elemental analysis data that came
 from a ThermoFinnigan 253 with Eurovector Elemental Analyzer. It summarizes the run(s) for quality control
-and then calibrates d13C and d15N to the VPDB and AirN2 scales, respectively. Ideally, shrekCN.py was run
+and then calibrates d13C and d15N to the VPDB and AirN2 scales, respectively. Ideally, CN.py was run
 prior to the present script.
 
 Version 0.1 mod date 2021-03-03 => created
@@ -14,12 +14,12 @@ Version 0.6 mod date 2022-05-19 => adding more to figures and generally trying t
 Version 0.7 mod date 2022-10-04 => combined shrekCNlog with shrekCNcalibrate. use "--verbose" argument when calling to get more log type info. Without, it will output a more sample data focused report (although, this report is not yet made)
 Version 1.0 mod date 2024-04-10 => trying to get this finished up to a version 1 level and upload to github
 Version 2.0 mod date 2024-06-03 => removed all specific standard references in favor of the automatically chosen type; code now separates out individual runs to be calibrated individually; also creates a summary file but this file still requires a fair bit of manual work to get it presentable
-Version 2.1 mod date 2024-06-19 => made instrument a variable, added unify argument, started updating for bokeh deprecations, renamed to be CN_calibrate.py
+Version 2.1 mod date 2024-06-22 => made instrument a variable, added unify argument, started updating for bokeh deprecations, renamed to be CN_calibrate.py, touched up figures a bit
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-20"
+__last_modified__ = "2024-06-22"
 __version__ = "2.1"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
@@ -75,19 +75,27 @@ else:
 print(f'\nArguments: {argument_string}')
 
 
+# ---------- LOAD CONFIGURATION ----------
+with open("CN_config.json", 'r') as f:
+    config = json.load(f)
+
+calibration_standards = config['standards']['calibration_standards']
+reference_material_list = calibration_standards[:] + config['standards']['ancillary_standards']
+non_samples_list = reference_material_list[:] + list(config['standards']['other_standards'].keys())
+
 
 # ---------- SETUP ---------- 
 version = os.path.basename(__file__) + ' - ' + time.ctime(os.path.getctime(__file__))
 
-INSTRUMENT = "shrekCN"
-
-python_directory = get_path(INSTRUMENT, "python")
-method_directory = get_path(INSTRUMENT, "project")
+home_directory = config["local_directories"]["home"]
+python_directory = f"{home_directory}{config['local_directories']['python']}"
+method_directory = f"{home_directory}{config['local_directories']['method_data_directory']}"
+reference_materials_file = f"{home_directory}{config['local_directories']['standards']}"
 new_data_directory = 'rawdata_new'
 archive_data_directory = 'rawdata_archive'
 junk_data_directory = 'rawdata_junk'
 
-python_scripts = {'shrekCN_lib.py': '', 'shrekCN.py': '', 'shrekCNcalibrate.py': ''}
+python_scripts = {'CN_lib.py': '', 'CN.py': '', 'CN_calibrate.py': ''}
 python_scripts = {key: (time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(f'{python_directory}{key}')))) for key, value in python_scripts.items()}
 
 CN_log_file_list = make_file_list(method_directory, '_analysis_log.csv')
@@ -124,12 +132,17 @@ summary_data_file = os.path.join(project_directory, summary_data_filename)
 
 
 # ---------- load reference material information ----------
-with open(get_path(INSTRUMENT, "standards"), 'r') as f:
-    refmat = json.load(f)
+with open(reference_materials_file, 'r') as f:
+    reference_materials = json.load(f)
 
-refmat_keys = refmat['organics'].keys()
-for i in refmat_keys:
-    globals()[i] = refmat['organics'][i]
+reference_materials_keys = reference_materials['organics'].keys()
+for i in reference_materials_keys:
+    globals()[i] = reference_materials['organics'][i]
+    globals()[i]['index'] = np.empty(0, dtype="int16")
+
+other_standards_keys = config['standards']['other_standards'].keys()
+for i in other_standards_keys:
+    globals()[i] = config['standards']['other_standards'][i]
     globals()[i]['index'] = np.empty(0, dtype="int16")
 
 
@@ -189,18 +202,6 @@ for current_run_index, current_run_name in enumerate(runs['names']):
 
     included_isotope_standards = list(set([i for i in Identifier1 if i in calibration_standards]))
     sample_indices = list(set(all_indices) - set(non_samples_indices))
-
-
-    # knowns_indices = []
-    # for i in knowns_list:
-    #     temp_indices = [j for j, e in enumerate(Identifier1) if str(e).lower() in (name.lower() for name in eval(i)['names'])]
-    #     eval(i)['index'] = temp_indices
-    #     knowns_indices.extend(eval(i)['index'])
-
-    # included_isotope_standards = list(set([i for i in Identifier1 if i in calibration_standards]))
-
-    # sample_indices = list(set(range(0,len(Analysis))) - set(knowns_indices))
-
 
 
     # ---------- Blanks and blank corrections ----------
@@ -383,7 +384,11 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     if verbose:
 
         figures[fig_n] = {}
-        figures[fig_n]['cap'] = f"""Figure {fig_n}."""
+        figures[fig_n]['cap'] = f"""Figure {fig_n}. The sample peak start time in chronological order can show how the chromatography is changing
+                                    with time. Ideally, the sample peak start time does not change. Fluctuations are expected depending on the size
+                                    of the peak but directional drift in the start time generally indicates something is changing that we don't want
+                                    to change. For example, the GC column is getting wet, the magnesium perchlorate is become saturated and clogged,
+                                    or the temperature in the room or of the GC column is changing."""
         figures[fig_n]['fig'] = figure(title="Nitrogen- and carbon-sample-peak start time vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
         figures[fig_n]['fig'].scatter(Analysis, N_sam_Start, legend_label="Nitrogen", marker='triangle', size=8, color="blue", alpha=0.8)
         figures[fig_n]['fig'].scatter(Analysis, C_sam_Start, legend_label="Carbon", marker='square', size=8, color="black", alpha=0.8)
@@ -399,8 +404,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         fig_n += 1
 
         figures[fig_n] = {}
-        figures[fig_n]['cap'] = f"""Figure {fig_n}."""
-        figures[fig_n]['fig'] = figure(title="Nitrogen- and carbon-sample-peak width vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
+        figures[fig_n]['cap'] = f"""Figure {fig_n}. The separation between the end of the sample nitrogen peak and the start of the carbon sample peak is also
+                                    indicative of the chromatography conditions. Generally, if the peaks are moving closer to one another, the GC column
+                                    is getting wet and needs to be baked out."""
+        figures[fig_n]['fig'] = figure(title="Nitrogen and carbon sample peak separation vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
         figures[fig_n]['fig'].scatter(Analysis, C_sam_Start-(N_sam_Start+N_sam_Width), marker='circle', size=8, color="red", alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = "Sample peak separation (seconds)"
         figures[fig_n]['fig'].xaxis.axis_label = "Analysis number"
@@ -409,13 +416,13 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n]['fig'].xaxis.major_label_text_font_size = font_size
         figures[fig_n]['fig'].yaxis.major_label_text_font_size = font_size
         figures[fig_n]['fig'].title.text_font_size = font_size
-        figures[fig_n]['fig'].legend.label_text_font_size = font_size
 
         fig_n += 1
 
         figures[fig_n] = {}
-        figures[fig_n]['cap'] = f"""Figure {fig_n}."""
-        figures[fig_n]['fig'] = figure(title="Nitrogen and carbon sample peak separation vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
+        figures[fig_n]['cap'] = f"""Figure {fig_n}. The sample peak width, as with the above figure, if changing in a directional manner, may be
+                                    indicative of a problem with the chromatography."""
+        figures[fig_n]['fig'] = figure(title="Nitrogen- and carbon-sample-peak width vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
         figures[fig_n]['fig'].scatter(Analysis, N_sam_Width, legend_label="Nitrogen", marker='triangle', size=8, color="blue", alpha=0.8)
         figures[fig_n]['fig'].scatter(Analysis, C_sam_Width, legend_label="Carbon", marker='square', size=8, color="black", alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = "Sample peak width (seconds)"
@@ -430,10 +437,15 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         fig_n += 1
 
         figures[fig_n] = {}
-        figures[fig_n]['cap'] = f"""Figure {fig_n}."""
+        figures[fig_n]['cap'] = f"""Figure {fig_n}. The peak height can help us observe several bits. One, the working gas peak height shows 
+                                    mass spectrometer source sensitivity consistency, assuming the working gas pressure is not changing. The
+                                    sample peak height gives you a glimps at the size of your samples. If you see any at the maximum value, 
+                                    you know you have weighed too much material."""
         figures[fig_n]['fig'] = figure(title="Nitrogen- and carbon-sample-peak height vs analysis number", width=1200, height=600, background_fill_color="#fafafa")
-        figures[fig_n]['fig'].scatter(Analysis, N_sam_Ampl28, legend_label="Nitrogen", marker='triangle', size=8, color='blue', alpha=0.8)
-        figures[fig_n]['fig'].scatter(Analysis, C_sam_Ampl44, legend_label="Carbon", marker='square', size=8, color='black', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, N_wg_Ampl28, legend_label="Nitrogen Working Gas", marker='triangle', size=5, line_color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, N_sam_Ampl28, legend_label="Nitrogen Sample", marker='triangle', size=8, color='blue', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, C_sam_Ampl44, legend_label="Carbon Sample", marker='square', size=8, color='black', alpha=0.8)
+        figures[fig_n]['fig'].scatter(Analysis, C_wg_Ampl44, legend_label="Carbon Working Gas", marker='square', size=8, line_color='black', alpha=0.8)
         figures[fig_n]['fig'].yaxis.axis_label = 'Peak amplitude (mV)'
         figures[fig_n]['fig'].xaxis.axis_label = 'Analysis number'
         figures[fig_n]['fig'].xaxis.axis_label_text_font_size = font_size
@@ -468,8 +480,9 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     figures[fig_n]['fig'].title.text_font_size = font_size
     figures[fig_n]['fig'].legend.label_text_font_size = font_size
 
+    fig_n += 1
+
     if verbose:
-        fig_n += 1
 
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}. Here we are able to see how the standards vary around the least squares line of best fit from above. The quality
@@ -491,7 +504,8 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n]['fig'].title.text_font_size = font_size
         figures[fig_n]['fig'].legend.label_text_font_size = font_size
 
-    fig_n += 1
+        fig_n += 1
+
 
     figures[fig_n] = {}
     figures[fig_n]['cap'] = f"""Figure {fig_n}. Carbon amount for each sample is calculated from the CO2 peak area and from a linear equation
@@ -515,8 +529,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     figures[fig_n]['fig'].title.text_font_size = font_size
     figures[fig_n]['fig'].legend.label_text_font_size = font_size
 
+    fig_n += 1
+
+
     if verbose:
-        fig_n += 1
 
         figures[fig_n] = {}
         figures[fig_n]['cap'] = f"""Figure {fig_n}. Here again we are able to see how the standards vary around the least squares line of best fit from above. The quality
@@ -609,7 +625,10 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         figures[fig_n]['fig'].title.text_font_size = font_size
         figures[fig_n]['fig'].legend.label_text_font_size = font_size
 
-    fig_n += 1
+        fig_n += 1
+
+
+
 
     figures[fig_n] = {}
     figures[fig_n]['cap'] = f"""Figure {fig_n}."""
@@ -685,7 +704,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     os.mkdir(report_directory)
     os.mkdir(os.path.join(report_directory, "data/"))
     os.mkdir(os.path.join(report_directory, "python/"))
-    shutil.copy2(os.path.join(python_directory, 'py_report_style.css'), report_directory)
+    shutil.copy2(os.path.join(python_directory, 'CN_report.css'), report_directory)
     [shutil.copy2(os.path.join(python_directory, script), os.path.join(report_directory, f"python/{script}_REPORT_COPY")) for script in python_scripts]
     shutil.copy2(os.path.join(method_directory, log_file_name), os.path.join(report_directory, 'data/'))
     report_page = os.path.join(report_directory, f'{current_run_name}_calibration_summary.html')
@@ -740,8 +759,8 @@ for current_run_index, current_run_name in enumerate(runs['names']):
             <!-- py by Andrew Schauer -->
             <meta http-equiv="Content-Type" content="text/html charset=UTF-8" />
             <meta name="viewport" content="width=device-width,initial-scale=1">
-            <link rel="stylesheet" type="text/css" href="py_report_style.css">
-            <title>Shrek CN Calibration Report</title>
+            <link rel="stylesheet" type="text/css" href="CN_report.css">
+            <title>CN Calibration Report</title>
         </head>"""
 
     calculation_notes_block = str([f"<li>{i}</li>" for i in calculation_notes]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "")
@@ -763,17 +782,17 @@ for current_run_index, current_run_name in enumerate(runs['names']):
     body = f"""
         <body>
         <div class="entire_page">
-        <h2>Shrek CN Calibration Report</h2>
+        <h2>CN Stable Isotope Analysis and Calibration Report</h2>
         <div class="created-date">Created - {str(dt.datetime.now())}</div>
         <h2>Introduction</h2>
         <div class="text-indent">
             <p>This report is meant to be a stand-alone collection of methods,
             data, scripts, and notes related to carbon and nitrogen isotopic
-            analysis. Your samples were analyzed on a ThermoFinnigan MAT 253 /
-            Eurovector EA, for d13C and d15N of solid material. You can read more
+            analysis. Your samples were analyzed on a {config['methods']['instrumentation']},
+            for d13C and d15N of solid material. You can read more
             about our implementation of this method on our website
-            <a href="https://isolab.ess.washington.edu/laboratory/solid-CN.php">
-            https://isolab.ess.washington.edu/laboratory/solid-CN.php</a>.</p>
+            <a href="{config['methods']['procedure_link']}">
+            {config['methods']['procedure']}</a>.</p>
 
             <p>The data and python scripts used to generate this page are linked
             and described in the <a href="#refs">References</a> section below. If you wish
@@ -823,7 +842,7 @@ for current_run_index, current_run_name in enumerate(runs['names']):
         <div class="text-indent">
             <p>All internationally recognized reference material accepted values can be found at the CIAAW (http://www.ciaaw.org/).
             All IsoLab in-house reference material accepted values can be found at http://isolab.ess.washington.edu/isolab/reference-materials#solid.
-            For this particular analysis, the accepted values are from {get_path('shrekCN', 'refmat_meta')}.
+            For this particular analysis, the accepted values are from {reference_materials['file_meta_data']['file']} - {reference_materials['file_meta_data']['modification_date']}.
             The reference materials and their accepted values, normalized to the Air-N2 and VPDB scales, included in this run / set are:</p>
             <table>
                 <tr><th>Reference<br>name</th><th>Reference<br>material</th><th>d15N<br>accepted<br>(permil)</th><th>Percent<br>Nitrogen<br>(%)</th><th>d13C<br>accepted<br>(permil)</th><th>Percent<br>Carbon<br>(%)</th><th>Purpose</th></tr>
