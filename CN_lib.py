@@ -14,7 +14,7 @@ __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
 __last_modified__ = "2024-06-23"
 __version__ = "2.2"
-__copyright__ = "Copyright 2024, Andy Schauer"
+__copyright__ = "Copyright 2025, Andy Schauer"
 __license__ = "Apache 2.0"
 
 

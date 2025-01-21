@@ -20,13 +20,14 @@ Version 1.1 mod date 2024-04-23 => found possible bug in joining notes. Used a c
 Version 1.2 mod date 2024-06-03 => added project level analysis log file and ability to choose one or create one. The script still writes to an exhaustive project-independent analysis log file
 Version 2.0 mod date 2024-06-21 => removed isolab_lib in favor of single CN_lib.py file
 Version 2.1 mod date 2024-06-23 => changed shrekCN to CN throughout
+Version 2.2 mod date 2024-11-22 => found bug in GasConfiguration names and fixed
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-06-23"
-__version__ = "2.1"
-__copyright__ = "Copyright 2024, Andy Schauer"
+__last_modified__ = "2024-11-22"
+__version__ = "2.2"
+__copyright__ = "Copyright 2025, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "Shrek"
 
@@ -143,7 +144,7 @@ reference_materials_file = f"{home_directory}{config['local_directories']['stand
 new_data_directory = 'rawdata_new'
 archive_data_directory = 'rawdata_archive'
 junk_data_directory = 'rawdata_junk'
-exhaustive_log_file_name = 'CN_analysis_log.csv'
+exhaustive_log_file_name = 'CN_exhaustive_analysis_log.csv'
 
 if os.path.isdir(method_directory) is False:
     print('directory does not exist...exiting....')
@@ -273,12 +274,12 @@ for file in filelist:
 
                     # PeakNr2 could be Nsam or Cref or some other problem
                     peak_number_offset = 1
-                    if data['GasConfiguration'][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
+                    if data[gas_config_name[0]][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
                         sample_note('No carbon peaks')
                         append_N_sam_data()
                         C_sam_none()
                         C_wg_none()
-                    elif data['GasConfiguration'][index + peak_number_offset] == 'CO2':  # Nsam and Csam are missing but Cref is present
+                    elif data[gas_config_name[0]][index + peak_number_offset] == 'CO2':  # Nsam and Csam are missing but Cref is present
                         sample_note('No nitrogen or carbon sample peaks')
                         N_sam_none()
                         C_sam_none()
@@ -291,10 +292,10 @@ for file in filelist:
 
                     # PeakNr2
                     peak_number_offset = 1
-                    if data['GasConfiguration'][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
+                    if data[gas_config_name[0]][index + peak_number_offset] == 'N2':  # Nsam is present but Csam is missing
                         append_N_sam_data()
                         C_sam_none()
-                    elif data['GasConfiguration'][index + peak_number_offset] == 'CO2':  # Nsam is missing but Csam is present
+                    elif data[gas_config_name[0]][index + peak_number_offset] == 'CO2':  # Nsam is missing but Csam is present
                         N_sam_none()
                         append_C_sam_data()
 
@@ -321,7 +322,7 @@ for file in filelist:
 
                 elif rows == 5:
                     # determine which gas config has extra peak then assign peaks and exclude extra but make note of it
-                    if data['GasConfiguration'][index:index + rows].count('N2') == 2:  # CO2 has extra peak
+                    if data[gas_config_name[0]][index:index + rows].count('N2') == 2:  # CO2 has extra peak
                         sample_note('extra CO2 peak detected')
                         # PeakNr1 is Nref
                         peak_number_offset = 0
@@ -351,7 +352,7 @@ for file in filelist:
                         peak_number_offset = 4
                         append_C_wg_data()
 
-                    elif data['GasConfiguration'][index:index + rows].count('CO2') == 2:  # N2 has extra peak
+                    elif data[gas_config_name[0]][index:index + rows].count('CO2') == 2:  # N2 has extra peak
                         N_wg_none()
                         N_sam_none()
                         # PeakNr3 is Csam
